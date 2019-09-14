@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import benzina.native
-import numpy            as np
+import numpy as np
 import os
 import torch.utils.data
 
@@ -16,10 +16,10 @@ class Dataset(torch.utils.data.Dataset):
         self._check_have_file("README.md")
         self._check_have_file("SHA256SUMS")
         self._core = benzina.native.DatasetCore(self.root)
-    
+
     def __len__(self):
         return len(self._core)
-    
+
     def __getitem__(self, index):
         #
         # This does not return images; Rather, it returns a tuple of some kind,
@@ -31,22 +31,22 @@ class Dataset(torch.utils.data.Dataset):
         # target information.
         #
         return self._core[index]
-    
+
     @property
     def root(self):
         """Absolute path to dataset directory."""
         return self._root
-    
+
     @property
     def shape(self):
         """Shape of images in dataset, as (h,w) tuple."""
         return self._core.shape
-    
+
     def _check_have_dir(self, *paths):
         filePath = os.path.join(self.root, *paths)
         if not os.path.isdir(filePath):
             raise FileNotFoundError(filePath)
-    
+
     def _check_have_file(self, *paths):
         filePath = os.path.join(self.root, *paths)
         if not os.path.isfile(filePath):
@@ -60,6 +60,6 @@ class ImageNet(Dataset):
         self._check_have_file("data.targets")
         with open(os.path.join(self.root, "data.targets"), "r") as f:
             self.targets = np.fromfile(f, np.dtype("<i8"))
-    
+
     def __getitem__(self, index):
         return (int(self.targets[index]),)

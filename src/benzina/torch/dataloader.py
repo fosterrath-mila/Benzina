@@ -1,15 +1,14 @@
 # -*- coding: utf-8 -*-
 import benzina.native
 import gc
-import numpy                           as np
+import numpy as np
 import os, sys
 import torch
 import torch.utils.data
 
-from   torch.utils.data.dataloader import default_collate
-from   contextlib                  import suppress
-from   .                           import operations as ops
-
+from torch.utils.data.dataloader import default_collate
+from contextlib import suppress
+from . import operations as ops
 
 
 class DataLoader(torch.utils.data.DataLoader):
@@ -52,96 +51,99 @@ class DataLoader(torch.utils.data.DataLoader):
             set the bias transformation. Values to substract a pixel's channels with.
             Note that this transformation is applied after norm_transform.
     """
-    def __init__(self,
-                 dataset,
-                 batch_size      = 1,
-                 shuffle         = False,
-                 sampler         = None,
-                 batch_sampler   = None,
-                 collate_fn      = default_collate,
-                 drop_last       = False,
-                 timeout         = 0,
-                 shape           = None,
-                 device          = None,
-                 multibuffering  = 3,
-                 seed            = None,
-                 warp_transform  = None,
-                 norm_transform  = None,
-                 bias_transform  = None):
-        super().__init__(dataset,
-                         batch_size     = batch_size,
-                         shuffle        = shuffle,
-                         sampler        = sampler,
-                         batch_sampler  = batch_sampler,
-                         num_workers    = 0,
-                         collate_fn     = collate_fn,
-                         pin_memory     = True,
-                         drop_last      = drop_last,
-                         timeout        = float(timeout),
-                         worker_init_fn = None)
-        
-        if   shape is None:
+
+    def __init__(
+        self,
+        dataset,
+        batch_size=1,
+        shuffle=False,
+        sampler=None,
+        batch_sampler=None,
+        collate_fn=default_collate,
+        drop_last=False,
+        timeout=0,
+        shape=None,
+        device=None,
+        multibuffering=3,
+        seed=None,
+        warp_transform=None,
+        norm_transform=None,
+        bias_transform=None,
+    ):
+        super().__init__(
+            dataset,
+            batch_size=batch_size,
+            shuffle=shuffle,
+            sampler=sampler,
+            batch_sampler=batch_sampler,
+            num_workers=0,
+            collate_fn=collate_fn,
+            pin_memory=True,
+            drop_last=drop_last,
+            timeout=float(timeout),
+            worker_init_fn=None,
+        )
+
+        if shape is None:
             shape = dataset.shape
         elif isinstance(shape, int):
             shape = (shape, shape)
-        
+
         if seed is None:
-            seed = torch.randint(low    = 0,
-                                 high   = 2**32,
-                                 size   = (),
-                                 dtype  = torch.int64,
-                                 device = "cpu")
+            seed = torch.randint(
+                low=0, high=2 ** 32, size=(), dtype=torch.int64, device="cpu"
+            )
             seed = int(seed)
-        
+
         if not isinstance(warp_transform, ops.WarpTransform):
             warp_transform = ops.ConstantWarpTransform(warp_transform)
         if not isinstance(norm_transform, ops.NormTransform):
             norm_transform = ops.ConstantNormTransform(norm_transform)
         if not isinstance(bias_transform, ops.BiasTransform):
             bias_transform = ops.ConstantBiasTransform(bias_transform)
-        
-        self.device          = device
-        self.multibuffering  = multibuffering
-        self.shape           = shape
-        self.RNG             = np.random.RandomState(seed)
-        self.warp_transform  = warp_transform
+
+        self.device = device
+        self.multibuffering = multibuffering
+        self.shape = shape
+        self.RNG = np.random.RandomState(seed)
+        self.warp_transform = warp_transform
         self.color_transform = ops.ConstantColorTransform()
-        self.oob_transform   = ops.ConstantOOBTransform()
-        self.norm_transform  = norm_transform
-        self.bias_transform  = bias_transform
-    
+        self.oob_transform = ops.ConstantOOBTransform()
+        self.norm_transform = norm_transform
+        self.bias_transform = bias_transform
+
     def __iter__(self):
         return _DataLoaderIter(self)
 
 
 class _DataLoaderIter:
     def __init__(self, loader):
-        assert(loader.multibuffering >= 1)
-        self.length          = len(loader)
-        self.dataset         = loader.dataset
-        self.batch_size      = loader.batch_size
-        self.batch_iter      = iter(loader.batch_sampler)
-        self.multibuffering  = loader.multibuffering
-        self.shape           = loader.shape
-        self.collate_fn      = loader.collate_fn
-        self.drop_last       = loader.drop_last
-        self.timeout         = loader.timeout
-        if   loader.device is None or loader.device == "cuda":
+        assert loader.multibuffering >= 1
+        self.length = len(loader)
+        self.dataset = loader.dataset
+        self.batch_size = loader.batch_size
+        self.batch_iter = iter(loader.batch_sampler)
+        self.multibuffering = loader.multibuffering
+        self.shape = loader.shape
+        self.collate_fn = loader.collate_fn
+        self.drop_last = loader.drop_last
+        self.timeout = loader.timeout
+        if loader.device is None or loader.device == "cuda":
             self.device = torch.device(torch.cuda.current_device())
         elif isinstance(loader.device, (str, int)):
             self.device = torch.device(loader.device)
         else:
             self.device = loader.device
-        self.RNG             = np.random.RandomState(loader.RNG.randint(2**32))
-        self.warp_transform  = loader.warp_transform
+        self.RNG = np.random.RandomState(loader.RNG.randint(2 ** 32))
+        self.warp_transform = loader.warp_transform
         self.color_transform = loader.color_transform
-        self.oob_transform   = loader.oob_transform
-        self.norm_transform  = loader.norm_transform
-        self.bias_transform  = loader.bias_transform
-        self.multibuffer     = None
-        self.core            = None
-        self.stop_iteration  = None
-    
+        self.oob_transform = loader.oob_transform
+        self.norm_transform = loader.norm_transform
+        self.bias_transform = loader.bias_transform
+        self.multibuffer = None
+        self.core = None
+        self.stop_iteration = None
+
     def __del__(self):
         """
         Destroy the iterator and all its resources.
@@ -162,16 +164,16 @@ class _DataLoaderIter:
         Because data loaders are not intended to be created extremely often,
         the extra cycles spent here doing this are worth it.
         """
-        
+
         del self.__dict__
         self.garbage_collect()
-    
+
     def __iter__(self):
         return self
-    
+
     def __len__(self):
         return self.length
-    
+
     def __next__(self):
         if self.stop_iteration is not None:
             raise self.stop_iteration
@@ -190,13 +192,13 @@ class _DataLoaderIter:
             self.stop_iteration = si
             self.garbage_collect()
             raise self.stop_iteration
-    
+
     def core_needs_init(self):
         return self.core is None
-    
+
     def pull_first_indices(self):
         self.first_indices = next(self.batch_iter)
-        
+
     def init_core(self):
         """
         Initialize the iterator core.
@@ -209,74 +211,77 @@ class _DataLoaderIter:
         the tensor cache, in an attempt to ensure circular references
         keeping previous large multibuffers alive have been destroyed.
         """
-        
+
         self.garbage_collect()
         self.check_or_set_batch_size(self.first_indices)
-        self.multibuffer = torch.zeros([self.multibuffering,
-                                        self.batch_size,
-                                        3,
-                                        self.shape[0],
-                                        self.shape[1]],
-                                       dtype  = torch.float32,
-                                       device = self.device)
-        self.core        = benzina.native.NvdecodeDataLoaderIterCore(
-                               self.dataset._core,
-                               str(self.device),
-                               self.multibuffer,
-                               self.multibuffer.data_ptr(),
-                               self.batch_size,
-                               self.multibuffering,
-                               self.shape[0],
-                               self.shape[1],
-                           )
-    
+        self.multibuffer = torch.zeros(
+            [self.multibuffering, self.batch_size, 3, self.shape[0], self.shape[1]],
+            dtype=torch.float32,
+            device=self.device,
+        )
+        self.core = benzina.native.NvdecodeDataLoaderIterCore(
+            self.dataset._core,
+            str(self.device),
+            self.multibuffer,
+            self.multibuffer.data_ptr(),
+            self.batch_size,
+            self.multibuffering,
+            self.shape[0],
+            self.shape[1],
+        )
+
     def push_first_indices(self):
         self.push(self.__dict__.pop("first_indices"))
-    
+
     def fill_core(self):
         while self.core.pushes < self.core.multibuffering:
             self.fill_one_batch()
-    
+
     def push(self, indices):
         self.check_or_set_batch_size(indices)
-        buffer  = self.multibuffer[self.core.pushes % self.core.multibuffering][:len(indices)]
-        indices = [int(i)                    for i in indices]
-        ptrs    = [int(buffer[n].data_ptr()) for n in range(len(indices))]
-        auxd    = [self.dataset[i]           for i in indices]
-        token   = (buffer, *self.collate_fn(auxd))
-        t_args  = (self.dataset.shape, self.shape, self.RNG)
-        
+        buffer = self.multibuffer[self.core.pushes % self.core.multibuffering][
+            : len(indices)
+        ]
+        indices = [int(i) for i in indices]
+        ptrs = [int(buffer[n].data_ptr()) for n in range(len(indices))]
+        auxd = [self.dataset[i] for i in indices]
+        token = (buffer, *self.collate_fn(auxd))
+        t_args = (self.dataset.shape, self.shape, self.RNG)
+
         with self.core.batch(token) as batch:
-            for i,ptr in zip(indices, ptrs):
+            for i, ptr in zip(indices, ptrs):
                 with batch.sample(i, ptr):
-                    self.core.setHomography    (*self.warp_transform (i, *t_args))
+                    self.core.setHomography(*self.warp_transform(i, *t_args))
                     self.core.selectColorMatrix(*self.color_transform(i, *t_args))
-                    self.core.setBias          (*self.bias_transform (i, *t_args))
-                    self.core.setScale         (*self.norm_transform (i, *t_args))
-                    self.core.setOOBColor      (*self.oob_transform  (i, *t_args))
-    
+                    self.core.setBias(*self.bias_transform(i, *t_args))
+                    self.core.setScale(*self.norm_transform(i, *t_args))
+                    self.core.setOOBColor(*self.oob_transform(i, *t_args))
+
     def pull(self):
         if self.core.pulls >= self.core.pushes:
             raise StopIteration
         return self.core.waitBatch(block=True, timeout=self.timeout)
-    
+
     def fill_one_batch(self):
         self.push(next(self.batch_iter))
-    
+
     def check_or_set_batch_size(self, indices):
         iter_batch_size = len(indices)
-        
-        if   self.batch_size is None:
+
+        if self.batch_size is None:
             self.batch_size = iter_batch_size
         elif self.batch_size < iter_batch_size:
-            raise RuntimeError("Batch size expected to be {}, but iterator returned larger batch size {}!"
-                               .format(self.batch_size, iter_batch_size))
+            raise RuntimeError(
+                "Batch size expected to be {}, but iterator returned larger batch size {}!".format(
+                    self.batch_size, iter_batch_size
+                )
+            )
         elif self.batch_size > iter_batch_size:
             if self.drop_last:
                 raise StopIteration
-    
+
     def garbage_collect(self):
-        self.core           = None
-        self.multibuffer    = None
+        self.core = None
+        self.multibuffer = None
         gc.collect()
         torch.cuda.empty_cache()
